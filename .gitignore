@@ -6,3 +6,5 @@ cache
 src/main/resources/git.properties
 .gradle
 build
+.DS_Store
+test

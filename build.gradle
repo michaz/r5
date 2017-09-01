@@ -58,3 +58,11 @@ dependencies {
     compile group: 'com.axiomalaska', name: 'polyline-encoder', version:'0.1'
     testCompile group: 'junit', name: 'junit', version:'4.12'
 }
+
+task deleteSf {
+    doLast {
+        if (project.file('test/input/sf/network.dat').exists()) {
+            delete 'test/input/sf/network.dat'
+        }
+    }
+}

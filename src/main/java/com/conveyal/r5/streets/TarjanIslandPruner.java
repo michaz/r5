@@ -277,6 +277,9 @@ public class TarjanIslandPruner {
     public void forEachOutgoingEdge (int vertex, Consumer<EdgeStore.Edge> consumer) {
         streets.outgoingEdges.get(vertex).forEach(eidx -> {
             edgeCursor.seek(eidx);
+            if(edgeCursor.getOSMID() == 23874736L){
+                int i = 9;
+            }
 
             // filter by mode
             switch (mode) {

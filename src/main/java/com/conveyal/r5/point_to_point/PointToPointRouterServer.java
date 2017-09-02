@@ -31,13 +31,13 @@ import gnu.trove.set.TIntSet;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import graphql.GraphQLException;
+import org.apache.http.client.entity.InputStreamFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.*;
 import java.util.*;
 import java.time.LocalDate;
-
-import java.io.File;
 
 import static com.conveyal.r5.streets.VertexStore.fixedDegreesToFloating;
 import static com.conveyal.r5.streets.VertexStore.floatingDegreesToFixed;
@@ -85,6 +85,31 @@ public class PointToPointRouterServer {
                     LOG.error("An error occurred during saving transit networks. Exiting.", e);
                     System.exit(-1);
                 }
+            }
+
+            // Dump edges to CSV
+            try {
+                String outfile = "/Users/critter/Documents/beam/net.csv";
+                BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
+                EdgeStore.Edge cursor = transportNetwork.streetLayer.edgeStore.getCursor();
+                VertexStore verts =  transportNetwork.streetLayer.vertexStore;
+                writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
+                while(cursor.advance()){
+                    writer.newLine();
+                    VertexStore.Vertex from = verts.getCursor(cursor.getFromVertex());
+                    VertexStore.Vertex to = verts.getCursor(cursor.getToVertex());
+                    writer.write(cursor.getOSMID()+","+
+                            from.getLon()+","+
+                            from.getLat()+","+
+                            to.getLon()+","+
+                            to.getLat()+","+
+                            cursor.getSpeedkmh()+","+
+                            "\""+cursor.getFlags().toString()+"\"");
+                }
+                writer.flush();
+                writer.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         } else if ("--graphs".equals(commandArguments[0])) {
             File dir = new File(commandArguments[1]);

@@ -33,8 +33,7 @@ import org.geotools.geojson.geom.GeometryJSON;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.Serializable;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -266,6 +265,30 @@ public class StreetLayer implements Serializable, Cloneable {
             }
         }
         stressLabeler.logErrors();
+        // Dump edges to CSV
+        try {
+            String outfile = "/Users/critter/Documents/beam/net-before.csv";
+            BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
+            EdgeStore.Edge thisCursor = edgeStore.getCursor();
+            VertexStore verts =  vertexStore;
+            writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
+            while(thisCursor.advance()){
+                writer.newLine();
+                VertexStore.Vertex from = verts.getCursor(thisCursor.getFromVertex());
+                VertexStore.Vertex to = verts.getCursor(thisCursor.getToVertex());
+                writer.write(thisCursor.getOSMID()+","+
+                        from.getLon()+","+
+                        from.getLat()+","+
+                        to.getLon()+","+
+                        to.getLat()+","+
+                        thisCursor.getSpeedkmh()+","+
+                        "\""+thisCursor.getFlags().toString()+"\"");
+            }
+            writer.flush();
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         // summarize LTS statistics
         Edge cursor = edgeStore.getCursor();
@@ -294,6 +317,7 @@ public class StreetLayer implements Serializable, Cloneable {
         LOG.info("Made {} vertices and {} edges.", vertexStore.getVertexCount(), edgeStore.nEdges());
         LOG.info("Found {} P+R node candidates", parkAndRideNodes.size());
 
+
         // We need edge lists to apply intersection costs.
         buildEdgeLists();
         stressLabeler.applyIntersectionCosts(this);
@@ -304,6 +328,30 @@ public class StreetLayer implements Serializable, Cloneable {
             new TarjanIslandPruner(this, MIN_SUBGRAPH_SIZE, StreetMode.BICYCLE).run();
         }
 
+        // Dump edges to CSV
+        try {
+            String outfile = "/Users/critter/Documents/beam/net-after.csv";
+            BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
+            EdgeStore.Edge thisCursor = edgeStore.getCursor();
+            VertexStore verts =  vertexStore;
+            writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
+            while(thisCursor.advance()){
+                writer.newLine();
+                VertexStore.Vertex from = verts.getCursor(thisCursor.getFromVertex());
+                VertexStore.Vertex to = verts.getCursor(thisCursor.getToVertex());
+                writer.write(thisCursor.getOSMID()+","+
+                        from.getLon()+","+
+                        from.getLat()+","+
+                        to.getLon()+","+
+                        to.getLat()+","+
+                        thisCursor.getSpeedkmh()+","+
+                        "\""+thisCursor.getFlags().toString()+"\"");
+            }
+            writer.flush();
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         // index the streets, we need the index to connect things to them.
         this.indexStreets();
 
@@ -1011,6 +1059,9 @@ public class StreetLayer implements Serializable, Cloneable {
         short forwardSpeed = speedToShort(speedConfigurator.getSpeedMS(way, false));
         short backwardSpeed = speedToShort(speedConfigurator.getSpeedMS(way, true));
 
+        if(osmID == 236348361L){
+            int i =9;
+        }
         RoadPermission roadPermission = permissions.getPermissions(way);
 
         // Create and store the forward and backward edge

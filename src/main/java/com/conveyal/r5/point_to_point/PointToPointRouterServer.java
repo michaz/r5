@@ -87,30 +87,6 @@ public class PointToPointRouterServer {
                 }
             }
 
-            // Dump edges to CSV
-            try {
-                String outfile = "/Users/critter/Documents/beam/net.csv";
-                BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
-                EdgeStore.Edge cursor = transportNetwork.streetLayer.edgeStore.getCursor();
-                VertexStore verts =  transportNetwork.streetLayer.vertexStore;
-                writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
-                while(cursor.advance()){
-                    writer.newLine();
-                    VertexStore.Vertex from = verts.getCursor(cursor.getFromVertex());
-                    VertexStore.Vertex to = verts.getCursor(cursor.getToVertex());
-                    writer.write(cursor.getOSMID()+","+
-                            from.getLon()+","+
-                            from.getLat()+","+
-                            to.getLon()+","+
-                            to.getLat()+","+
-                            cursor.getSpeedkmh()+","+
-                            "\""+cursor.getFlags().toString()+"\"");
-                }
-                writer.flush();
-                writer.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         } else if ("--graphs".equals(commandArguments[0])) {
             File dir = new File(commandArguments[1]);
 

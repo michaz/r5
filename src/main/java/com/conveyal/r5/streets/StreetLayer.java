@@ -265,30 +265,7 @@ public class StreetLayer implements Serializable, Cloneable {
             }
         }
         stressLabeler.logErrors();
-        // Dump edges to CSV
-        try {
-            String outfile = "/Users/critter/Documents/beam/net-before.csv";
-            BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
-            EdgeStore.Edge thisCursor = edgeStore.getCursor();
-            VertexStore verts =  vertexStore;
-            writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
-            while(thisCursor.advance()){
-                writer.newLine();
-                VertexStore.Vertex from = verts.getCursor(thisCursor.getFromVertex());
-                VertexStore.Vertex to = verts.getCursor(thisCursor.getToVertex());
-                writer.write(thisCursor.getOSMID()+","+
-                        from.getLon()+","+
-                        from.getLat()+","+
-                        to.getLon()+","+
-                        to.getLat()+","+
-                        thisCursor.getSpeedkmh()+","+
-                        "\""+thisCursor.getFlags().toString()+"\"");
-            }
-            writer.flush();
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        dumpEdges("/Users/critter/Documents/beam/r5/net-before.csv");
 
         // summarize LTS statistics
         Edge cursor = edgeStore.getCursor();
@@ -303,6 +280,7 @@ public class StreetLayer implements Serializable, Cloneable {
             else if (cursor.getFlag(EdgeStore.EdgeFlag.BIKE_LTS_4)) lts4++;
             else ltsUnknown++;
         } while (cursor.advance());
+
 
         LOG.info("Surrogate LTS:\n  1: {} edges\n  2: {} edges\n  3: {} edges\n  4: {} edges\n  Unknown: {} edges",
                 lts1, lts2, lts3, lts4, ltsUnknown);
@@ -327,31 +305,8 @@ public class StreetLayer implements Serializable, Cloneable {
             new TarjanIslandPruner(this, MIN_SUBGRAPH_SIZE, StreetMode.WALK).run();
             new TarjanIslandPruner(this, MIN_SUBGRAPH_SIZE, StreetMode.BICYCLE).run();
         }
+        dumpEdges("/Users/critter/Documents/beam/r5/net-after.csv");
 
-        // Dump edges to CSV
-        try {
-            String outfile = "/Users/critter/Documents/beam/net-after.csv";
-            BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
-            EdgeStore.Edge thisCursor = edgeStore.getCursor();
-            VertexStore verts =  vertexStore;
-            writer.write("osm,fromLon,fromLat,toLon,toLat,kmh,flags");
-            while(thisCursor.advance()){
-                writer.newLine();
-                VertexStore.Vertex from = verts.getCursor(thisCursor.getFromVertex());
-                VertexStore.Vertex to = verts.getCursor(thisCursor.getToVertex());
-                writer.write(thisCursor.getOSMID()+","+
-                        from.getLon()+","+
-                        from.getLat()+","+
-                        to.getLon()+","+
-                        to.getLat()+","+
-                        thisCursor.getSpeedkmh()+","+
-                        "\""+thisCursor.getFlags().toString()+"\"");
-            }
-            writer.flush();
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
         // index the streets, we need the index to connect things to them.
         this.indexStreets();
 
@@ -379,6 +334,39 @@ public class StreetLayer implements Serializable, Cloneable {
             vertexIndexForOsmNode = null;
 
         osm = null;
+        dumpEdges("/Users/critter/Documents/beam/r5/net-after-2.csv");
+    }
+
+    public void dumpEdges(String outfile) {
+        // Dump edges to CSV
+        try {
+            BufferedWriter writer = new BufferedWriter(new FileWriter(outfile));
+            EdgeStore.Edge thisCursor = edgeStore.getCursor();
+            VertexStore verts =  vertexStore;
+            writer.write("r5,isbackward,osm,fromLon,fromLat,toLon,toLat,kmh,flags,permissions,highway");
+            while(thisCursor.advance()){
+                writer.newLine();
+                VertexStore.Vertex from = verts.getCursor(thisCursor.getFromVertex());
+                VertexStore.Vertex to = verts.getCursor(thisCursor.getToVertex());
+                writer.write(thisCursor.getEdgeIndex()+","+
+                        thisCursor.isBackward()+","+
+                        thisCursor.getOSMID()+","+
+                        from.getLon()+","+
+                        from.getLat()+","+
+                        to.getLon()+","+
+                        to.getLat()+","+
+                        thisCursor.getSpeedkmh()+","+
+                        "\""+thisCursor.getFlags().toString()+"\","+
+                        "\""+thisCursor.getPermissionFlags().toString()+"\","+
+                        osm.ways.get(thisCursor.getOSMID()).getTag("highway")
+                );
+            }
+            writer.flush();
+            writer.close();
+        } catch (IOException e1) {
+            e1.printStackTrace();
+        }
+
     }
 
     /**
@@ -1026,6 +1014,9 @@ public class StreetLayer implements Serializable, Cloneable {
      * Make an edge for a sub-section of an OSM way, typically between two intersections or leading up to a dead end.
      */
     private void makeEdge(Way way, int beginIdx, int endIdx, Long osmID) {
+        if(osmID==397108538L){
+            int i=9;
+        }
 
         long beginOsmNodeId = way.nodes[beginIdx];
         long endOsmNodeId = way.nodes[endIdx];

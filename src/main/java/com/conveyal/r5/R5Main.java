@@ -6,8 +6,13 @@ import com.conveyal.r5.point_to_point.PointToPointRouterServer;
 import com.conveyal.r5.publish.StaticMain;
 import com.conveyal.r5.publish.StaticServer;
 import com.conveyal.r5.publish.StaticSiteRequest;
+import com.conveyal.r5.streets.EdgeStore;
+import com.conveyal.r5.streets.VertexStore;
 import com.conveyal.r5.visualizer.RaptorDebugger;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Arrays;
 
 /**

@@ -169,7 +169,7 @@ public class TransportNetwork implements Serializable {
         StreetLayer streetLayer = new StreetLayer(tnBuilderConfig);
         transportNetwork.streetLayer = streetLayer;
         streetLayer.parentNetwork = transportNetwork;
-        streetLayer.loadFromOsm(osm);
+        streetLayer.loadFromOsm(osm,false,false);
         osm.close();
 
         // The street index is needed for associating transit stops with the street network

@@ -166,6 +166,13 @@ public class TarjanIslandPruner {
                     if (discoveryIndex[vertex] != -1) {
                         if (!onTarjanStack.get(vertex)) continue; // this strong component has already been found and removed from the tarjanStack
 
+                        int seekingEdge = 18616;
+                        if(streets.outgoingEdges.get(vertex).contains(seekingEdge) || streets.incomingEdges.get(vertex).contains(seekingEdge)){
+                            int i = 9;
+                        }
+                        if(vertex == 9231){
+                            int ii = 0;
+                        }
                         // we have previously visited this vertex and are looping back to it,
                         // update lowestDiscoveryIndexOfReachableVertexKnownToBePredecessor based on successors
 
@@ -186,6 +193,9 @@ public class TarjanIslandPruner {
                         // a relatively large (metropolitan Washington, DC) graph.
                         forEachOutgoingEdge(vertex, e -> {
                             int toVertex = e.getToVertex();
+                            if(vertex == 2618){
+                                int ii = 0;
+                            }
                             if (discoveryIndex[toVertex] > discoveryIndex[vertex]) {
                                 // only update if the to vertex was discovered later than the vertex under consideration
                                 // i.e. if it was explored downstream of this vertex.
@@ -209,10 +219,16 @@ public class TarjanIslandPruner {
                                 onTarjanStack.clear(poppedVertex);
                                 strongComponent.add(poppedVertex);
                             } while (poppedVertex != vertex);
+                            if(strongComponent.contains(2618) || strongComponent.contains(4563)){
+                                int jjj=9;
+                            }
 
                             strongComponents.add(strongComponent);
                         }
                     } else {
+                        if(vertex == 2618){
+                            int ii = 0;
+                        }
                         // start recursion. This is basically what the strongconnect() function in the wikipedia pseudocode
                         // example starts with
                         discoveryIndex[vertex] = lowestDiscoveryIndexOfReachableVertexKnownToBePredecessor[vertex] = nextDiscoveryIndex++;
@@ -227,6 +243,9 @@ public class TarjanIslandPruner {
 
                         forEachOutgoingEdge(vertex, e -> {
                             int toVertex = e.getToVertex();
+                            if(toVertex == 2618){
+                                int ii = 0;
+                            }
                             if (discoveryIndex[toVertex] == -1) {
                                 // re-mark this vertex to update lowestDiscoveryIndexOfReachableVertexKnownToBePredecessor
                                 // after the vertex has been explored
@@ -263,6 +282,9 @@ public class TarjanIslandPruner {
                 nComponentsRemoved++;
                 for (TIntIterator it = strongComponent.iterator(); it.hasNext();) {
                     int vertex = it.next();
+                    if(vertex == 2618 || vertex == 4563){
+                        int ii = 0;
+                    }
                     nVerticesRemoved++;
                     removePermissionsAroundVertex(vertex);
                 }
@@ -277,7 +299,7 @@ public class TarjanIslandPruner {
     public void forEachOutgoingEdge (int vertex, Consumer<EdgeStore.Edge> consumer) {
         streets.outgoingEdges.get(vertex).forEach(eidx -> {
             edgeCursor.seek(eidx);
-            if(edgeCursor.getOSMID() == 23874736L){
+            if(edgeCursor.getOSMID() == 397108538L || edgeCursor.getOSMID() == 394443191L){
                 int i = 9;
             }
 

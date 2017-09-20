@@ -1,26 +1,17 @@
 package com.conveyal.r5.streets;
 
 import com.conveyal.gtfs.model.Stop;
-import com.conveyal.osmlib.Node;
-import com.conveyal.osmlib.OSM;
-import com.conveyal.osmlib.OSMEntity;
-import com.conveyal.osmlib.Relation;
-import com.conveyal.osmlib.Way;
+import com.conveyal.osmlib.*;
 import com.conveyal.r5.api.util.BikeRentalStation;
 import com.conveyal.r5.api.util.ParkRideParking;
 import com.conveyal.r5.common.GeometryUtils;
-import com.conveyal.r5.labeling.LevelOfTrafficStressLabeler;
-import com.conveyal.r5.labeling.RoadPermission;
-import com.conveyal.r5.labeling.SpeedConfigurator;
-import com.conveyal.r5.labeling.TraversalPermissionLabeler;
-import com.conveyal.r5.labeling.TypeOfEdgeLabeler;
-import com.conveyal.r5.labeling.USTraversalPermissionLabeler;
+import com.conveyal.r5.labeling.*;
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
+import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.streets.EdgeStore.Edge;
 import com.conveyal.r5.transit.TransitLayer;
 import com.conveyal.r5.transit.TransportNetwork;
 import com.vividsolutions.jts.geom.*;
-import com.conveyal.r5.profile.StreetMode;
 import com.vividsolutions.jts.operation.union.UnaryUnionOp;
 import gnu.trove.list.TIntList;
 import gnu.trove.list.array.TIntArrayList;
@@ -35,19 +26,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static com.conveyal.r5.streets.VertexStore.fixedDegreeGeometryToFloating;
-import static com.conveyal.r5.streets.VertexStore.fixedDegreesToFloating;
 
 /**
  * This stores the street layer of OTP routing data.
@@ -235,7 +218,7 @@ public class StreetLayer implements Serializable, Cloneable {
 
 
     /** Load OSM, optionally removing floating subgraphs (recommended) */
-    void loadFromOsm (OSM osm, boolean removeIslands, boolean saveVertexIndex) {
+    public void loadFromOsm (OSM osm, boolean removeIslands, boolean saveVertexIndex) {
         if (!osm.intersectionDetection)
             throw new IllegalArgumentException("Intersection detection not enabled on OSM source");
 

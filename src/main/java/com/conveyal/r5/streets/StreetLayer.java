@@ -87,7 +87,7 @@ public class StreetLayer implements Serializable, Cloneable {
      * This should not necessarily be a constant, but even if it's made settable it should be a field to avoid
      * cluttering method signatures. Generally you'd set this once at startup and always use the same value afterward.
      */
-    public static final double LINK_RADIUS_METERS = 2000;
+    public static final double LINK_RADIUS_METERS = 10000;
 
     // Edge lists should be constructed after the fact from edges. This minimizes serialized size too.
     public transient List<TIntList> outgoingEdges;

@@ -7,7 +7,6 @@ import com.conveyal.r5.analyst.error.TaskError;
 import com.conveyal.r5.analyst.scenario.Scenario;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
-import com.conveyal.r5.profile.GreedyFareCalculator;
 import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.streets.LinkedPointSet;
 import com.conveyal.r5.streets.StreetLayer;
@@ -277,7 +276,7 @@ public class TransportNetwork implements Serializable {
         streetLayer.indexStreets();
 
         if (tnBuilderConfig.bikeRentalFile != null) {
-            streetLayer.associateBikeSharing(tnBuilderConfig, 500);
+            streetLayer.associateBikeSharing(tnBuilderConfig);
         }
 
         // Load transit data TODO remove need to supply street layer at this stage

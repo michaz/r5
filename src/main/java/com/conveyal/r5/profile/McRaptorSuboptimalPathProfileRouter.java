@@ -134,7 +134,7 @@ public class McRaptorSuboptimalPathProfileRouter {
         // seed with some characteristic of the request itself, e.g. (int) (request.fromLat * 1e9)
         MersenneTwister mersenneTwister = new MersenneTwister();
 
-        for (int departureTime = request.toTime - 60, n = 0; departureTime > request.fromTime; departureTime -= mersenneTwister.nextInt(maxSamplingFrequency), n++) {
+        for (int departureTime = request.toTime, n = 0; n < 1; n++) {
 
             // we're not using range-raptor so it's safe to change the schedule on each search
             offsets.randomize();

@@ -21,7 +21,7 @@ public class StatsCalculator {
         Stats[] rideStats = IntStream.range(0, nSegments).mapToObj(i -> new Stats()).toArray(Stats[]::new);
         Stats[] waitStats = IntStream.range(0, nSegments).mapToObj(i -> new Stats()).toArray(Stats[]::new);
 
-        for (int start = req.fromTime; start < req.toTime; start += 60) {
+        for (int start = req.fromTime; start <= req.toTime; start += 60) {
             // TODO should board slack be applied at the origin stop? Is this done in RaptorWorker?
             int timeAtOriginStop = start + accessTime + FastRaptorWorker.BOARD_SLACK_SECONDS;
             int bestTimeAtDestinationStop = Integer.MAX_VALUE;

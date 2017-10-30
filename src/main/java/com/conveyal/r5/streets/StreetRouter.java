@@ -69,9 +69,9 @@ public class StreetRouter {
      * The reason this is pluggable is to account for left and right hand drive (as well as any other country-specific
      * details you might want to implement)
      */
-    private TurnCostCalculator turnCostCalculator;
+    private final TurnCostCalculator turnCostCalculator;
 
-    private TravelTimeCalculator travelTimeCalculator;
+    private final TravelTimeCalculator travelTimeCalculator;
 
     // These are used for scaling coordinates in approximate distance calculations.
     // The lon value must be properly scaled to underestimate distances in the region where we're routing.
@@ -183,6 +183,7 @@ public class StreetRouter {
         this.streetLayer = streetLayer;
         // TODO one of two things: 1) don't hardwire drive-on-right, or 2) https://en.wikipedia.org/wiki/Dagen_H
         this.turnCostCalculator = new TurnCostCalculator(streetLayer, true);
+        this.travelTimeCalculator = new EdgeStore.DefaultTravelTimeCalculator();
     }
 
     /**
@@ -1179,6 +1180,5 @@ public class StreetRouter {
         }
     }
 
-    public static class DefaultTravelTimeCalculator implements TravelTimeCalculator {
-    }
+
 }

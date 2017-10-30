@@ -1,16 +1,8 @@
 package com.conveyal.r5.streets;
 
-import com.conveyal.osmlib.OSM;
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
-import com.conveyal.r5.profile.ProfileRequest;
-import com.conveyal.r5.profile.StreetMode;
-import gnu.trove.TIntCollection;
-import gnu.trove.iterator.TIntIterator;
 import junit.framework.TestCase;
 import org.junit.Test;
-
-import java.util.Arrays;
-import java.util.EnumSet;
 
 public class TimeDependentRoutingTest extends TestCase {
 
@@ -43,12 +35,21 @@ public class TimeDependentRoutingTest extends TestCase {
 
         assertEquals(24, stateAtVertex.durationSeconds);
 
-        StreetRouter anotherStreetRouter = new StreetRouter(streetLayer, (edge, streetMode, req) -> 30);
+        StreetRouter anotherStreetRouter = new StreetRouter(streetLayer, (edge, durationSeconds, streetMode, req) -> 30);
         anotherStreetRouter.setOrigin(one);
         anotherStreetRouter.route();
         StreetRouter.State anotherStateAtVertex = anotherStreetRouter.getStateAtVertex(three);
 
         assertEquals(60, anotherStateAtVertex.durationSeconds);
+
+        // Time dependent. This should evaluate (t_n = t_n-1 + (t_n-1 + 40), t_0 = 0) at n=2
+        StreetRouter yetAnotherStreetRouter = new StreetRouter(streetLayer, (edge, durationSeconds, streetMode, req) -> durationSeconds + 40);
+        yetAnotherStreetRouter.setOrigin(one);
+        yetAnotherStreetRouter.route();
+        StreetRouter.State yetAnotherStateAtVertex = yetAnotherStreetRouter.getStateAtVertex(three);
+
+        assertEquals(120, yetAnotherStateAtVertex.durationSeconds);
+
 
     }
 

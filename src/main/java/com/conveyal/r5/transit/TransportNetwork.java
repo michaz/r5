@@ -7,6 +7,9 @@ import com.conveyal.r5.analyst.error.TaskError;
 import com.conveyal.r5.analyst.scenario.Scenario;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
+import com.conveyal.r5.profile.StreetMode;
+import com.conveyal.r5.streets.LinkedPointSet;
+import com.conveyal.r5.streets.StreetLayer;
 import com.conveyal.r5.util.ExpandingMMFBytez;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hashing;
@@ -25,7 +28,8 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.zip.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * This is a completely new replacement for Graph, Router etc.
@@ -229,6 +233,89 @@ public class TransportNetwork implements Serializable {
         return transportNetwork;
     }
 
+
+    /**
+     * Allows us to disable island pruning by setting two extra booleans to false. Used by the BEAM team (AAC 17/09/18)
+     */
+    public static TransportNetwork fromFiles(String osmSourceFile, List<String> gtfsSourceFiles,
+                                             TNBuilderConfig tnBuilderConfig,  boolean removeIslands,
+                                             boolean saveVertexIndex){
+        return fromFiles(osmSourceFile, gtfsSourceFiles, null, tnBuilderConfig, removeIslands, saveVertexIndex);
+    }
+
+    /**
+     * Allows us to disable island pruning by setting two extra booleans to false. Used by the BEAM team (AAC 17/09/18)
+     *
+     * @[param removeIslands Set to false to disable island pruning.
+     * @param saveVertexIndex Set to false to disable island pruning.
+     */
+    public static TransportNetwork fromFiles(String osmSourceFile, List<String> gtfsSourceFiles, List<GTFSFeed> feeds,
+                                             TNBuilderConfig tnBuilderConfig,  boolean removeIslands,
+                                             boolean saveVertexIndex){
+        System.out.println("Summarizing builder config: " + BUILDER_CONFIG_FILENAME);
+        System.out.println(tnBuilderConfig);
+        File dir = new File(osmSourceFile).getParentFile();
+
+        // Create a transport network to hold the street and transit layers
+        TransportNetwork transportNetwork = new TransportNetwork();
+
+        // Load OSM data into MapDB
+        OSM osm = new OSM(new File(dir,"osm.mapdb").getPath());
+        osm.intersectionDetection = true;
+        osm.readFromFile(osmSourceFile);
+
+        // Make street layer from OSM data in MapDB
+        StreetLayer streetLayer = new StreetLayer(tnBuilderConfig);
+        transportNetwork.streetLayer = streetLayer;
+        streetLayer.parentNetwork = transportNetwork;
+        streetLayer.loadFromOsm(osm, removeIslands, saveVertexIndex); // Only line changed
+        osm.close();
+
+        // The street index is needed for associating transit stops with the street network
+        // and for associating bike shares with the street network
+        streetLayer.indexStreets();
+
+        if (tnBuilderConfig.bikeRentalFile != null) {
+            streetLayer.associateBikeSharing(tnBuilderConfig);
+        }
+
+        // Load transit data TODO remove need to supply street layer at this stage
+        TransitLayer transitLayer = new TransitLayer();
+
+        if (feeds != null) {
+            for (GTFSFeed feed : feeds) {
+                transitLayer.loadFromGtfs(feed);
+            }
+        } else {
+            for (String feedFile: gtfsSourceFiles) {
+                GTFSFeed feed = GTFSFeed.fromFile(feedFile);
+                transitLayer.loadFromGtfs(feed);
+                feed.close();
+            }
+        }
+        transportNetwork.transitLayer = transitLayer;
+        transitLayer.parentNetwork = transportNetwork;
+        // transitLayer.summarizeRoutesAndPatterns();
+
+        // The street index is needed for associating transit stops with the street network.
+        // FIXME indexStreets is called three times: in StreetLayer::loadFromOsm, just after loading the OSM, and here
+        streetLayer.indexStreets();
+        streetLayer.associateStops(transitLayer);
+        // Edge lists must be built after all inter-layer linking has occurred.
+        streetLayer.buildEdgeLists();
+        transitLayer.rebuildTransientIndexes();
+
+        // Create transfers
+        new TransferFinder(transportNetwork).findTransfers();
+        new TransferFinder(transportNetwork).findParkRideTransfer();
+
+        transportNetwork.fareCalculator = tnBuilderConfig.analysisFareCalculator;
+
+        if (transportNetwork.fareCalculator != null) transportNetwork.fareCalculator.transitLayer = transitLayer;
+
+        return transportNetwork;
+    }
+
     /**
      * OSM PBF files are fragments of a single global database with a single namespace. Therefore it is valid to load
      * more than one PBF file into a single OSM storage object. However they might be from different points in time, so
@@ -241,7 +328,49 @@ public class TransportNetwork implements Serializable {
         return fromFiles(osmFile, gtfsFiles, null, config);
     }
 
-    public static TransportNetwork fromDirectory (File directory) throws DuplicateFeedException {
+	/**
+	 * Allows us to disable island pruning by setting two extra booleans to false. Used by the BEAM team (AAC 17/09/18)
+	 * @param directory
+	 * @return
+	 * @throws DuplicateFeedException
+	 */
+	public static TransportNetwork fromDirectory (File directory, boolean removeIslands, boolean saveVertexIndex)
+			throws DuplicateFeedException {
+		File osmFile = null;
+		List<String> gtfsFiles = new ArrayList<>();
+		TNBuilderConfig builderConfig = null;
+		//This can exit program if json file has errors.
+		builderConfig = loadJson(new File(directory, BUILDER_CONFIG_FILENAME));
+		for (File file : directory.listFiles()) {
+			switch (InputFileType.forFile(file)) {
+				case GTFS:
+					LOG.info("Found GTFS file {}", file);
+					gtfsFiles.add(file.getAbsolutePath());
+					break;
+				case OSM:
+					LOG.info("Found OSM file {}", file);
+					if (osmFile == null) {
+						osmFile = file;
+					} else {
+						LOG.warn("Can only load one OSM file at a time.");
+					}
+					break;
+				case DEM:
+					LOG.warn("DEM file '{}' not yet supported.", file);
+					break;
+				case OTHER:
+					LOG.warn("Skipping non-input file '{}'", file);
+			}
+		}
+		if (osmFile == null) {
+			LOG.error("An OSM PBF file is required to build a network.");
+			return null;
+		} else {
+			return fromFiles(osmFile.getAbsolutePath(), gtfsFiles, builderConfig, removeIslands, saveVertexIndex);
+		}
+	}
+
+	public static TransportNetwork fromDirectory (File directory) throws DuplicateFeedException {
         File osmFile = null;
         List<String> gtfsFiles = new ArrayList<>();
         TNBuilderConfig builderConfig = null;

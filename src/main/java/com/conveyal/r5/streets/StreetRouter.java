@@ -69,9 +69,9 @@ public class StreetRouter {
      * The reason this is pluggable is to account for left and right hand drive (as well as any other country-specific
      * details you might want to implement)
      */
-    private final TurnCostCalculator turnCostCalculator;
+    private TurnCostCalculator turnCostCalculator;
 
-    private final TravelTimeCalculator travelTimeCalculator;
+    private TravelTimeCalculator travelTimeCalculator;
 
     // These are used for scaling coordinates in approximate distance calculations.
     // The lon value must be properly scaled to underestimate distances in the region where we're routing.
@@ -179,17 +179,6 @@ public class StreetRouter {
      */
     public StreetRouter previousRouter;
 
-    public StreetRouter (StreetLayer streetLayer) {
-        this(streetLayer, new EdgeStore.DefaultTravelTimeCalculator());
-    }
-
-    public StreetRouter (StreetLayer streetLayer, TravelTimeCalculator travelTimeCalculator) {
-        this.streetLayer = streetLayer;
-        // TODO one of two things: 1) don't hardwire drive-on-right, or 2) https://en.wikipedia.org/wiki/Dagen_H
-        this.turnCostCalculator = new TurnCostCalculator(streetLayer, true);
-        this.travelTimeCalculator = travelTimeCalculator;
-    }
-
     /**
      * Supply a RoutingVisitor to track search progress for debugging.
      */
@@ -284,6 +273,18 @@ public class StreetRouter {
         });
         return result;
     }
+
+    public StreetRouter (StreetLayer streetLayer) {
+        this(streetLayer, new EdgeStore.DefaultTravelTimeCalculator());
+    }
+
+    public StreetRouter (StreetLayer streetLayer, TravelTimeCalculator travelTimeCalculator) {
+        this.streetLayer = streetLayer;
+        // TODO one of two things: 1) don't hardwire drive-on-right, or 2) https://en.wikipedia.org/wiki/Dagen_H
+        this.turnCostCalculator = new TurnCostCalculator(streetLayer, true);
+        this.travelTimeCalculator = travelTimeCalculator;
+    }
+
 
     /**
      * Set the origin point of this StreetRouter (before a search is started) to a point along an edge that allows

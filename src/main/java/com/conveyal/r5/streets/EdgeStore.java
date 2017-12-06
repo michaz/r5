@@ -213,7 +213,7 @@ public class EdgeStore implements Serializable {
         NO_THRU_TRAFFIC_BIKE (11),
         NO_THRU_TRAFFIC_CAR (12),
         SLOPE_OVERRIDE (13),
-        /** Link edge, two should not be traversed one-after-another FIXME comment seems incorrect */
+        /** An edge that links a transit stop to the street network; two such edges should not be traversed consecutively. */
         LINK (14),
 
         // Permissions
@@ -224,7 +224,7 @@ public class EdgeStore implements Serializable {
         //Set when OSM tags are wheelchair==limited currently unroutable
         LIMITED_WHEELCHAIR(19),
 
-        //If this edge is good idea to use for linking. Skips tunnels, covered and motorways for now
+        // If this edge is good idea to use for linking. Skips tunnels, covered and motorways for now
         LINKABLE(20),
 
         // Bicycle level of traffic stress for this street.
@@ -564,7 +564,7 @@ public class EdgeStore implements Serializable {
             }
 
             StreetRouter.State s1 = new StreetRouter.State(vertex, edgeIndex, s0);
-            float time = travelTimeCalculator.getTravelTimems(this, s0.durationSeconds, streetMode, req);
+            float time = travelTimeCalculator.getTravelTimeMilliseconds(this, s0.durationSeconds, streetMode, req);
             float weight = 0;
 
             if (!canTurnFrom(s0, s1, req.reverseSearch)) return null;
@@ -1124,7 +1124,7 @@ public class EdgeStore implements Serializable {
     public static class DefaultTravelTimeCalculator implements TravelTimeCalculator {
 
         @Override
-        public float getTravelTimems(Edge edge, int durationSeconds, StreetMode streetMode, ProfileRequest req) {
+        public float getTravelTimeMilliseconds(Edge edge, int durationSeconds, StreetMode streetMode, ProfileRequest req) {
             float speedms = edge.calculateSpeed(req, streetMode);
             return (float) (edge.getLengthM() / speedms);
         }

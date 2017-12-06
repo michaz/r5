@@ -1,10 +1,11 @@
 package com.conveyal.r5.streets;
 
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
-import junit.framework.TestCase;
 import org.junit.Test;
 
-public class TimeDependentRoutingTest extends TestCase {
+import static org.junit.Assert.assertEquals;
+
+public class TimeDependentRoutingTest {
 
     @Test
     public void testProvideMyOwnTravelTime() {

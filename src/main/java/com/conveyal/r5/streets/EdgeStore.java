@@ -224,7 +224,7 @@ public class EdgeStore implements Serializable {
         //Set when OSM tags are wheelchair==limited currently unroutable
         LIMITED_WHEELCHAIR(19),
 
-        // If this edge is good idea to use for linking. Skips tunnels, covered and motorways for now
+        // If this flag is present, the edge is good idea to use for linking. Excludes runnels, motorways, and covered roads.
         LINKABLE(20),
 
         // Bicycle level of traffic stress for this street.
@@ -564,7 +564,7 @@ public class EdgeStore implements Serializable {
             }
 
             StreetRouter.State s1 = new StreetRouter.State(vertex, edgeIndex, s0);
-            float time = travelTimeCalculator.getTravelTimeMilliseconds(this, s0.durationSeconds, streetMode, req);
+            float time = travelTimeCalculator.getTravelTimeSeconds(this, s0.durationSeconds, streetMode, req);
             float weight = 0;
 
             if (!canTurnFrom(s0, s1, req.reverseSearch)) return null;
@@ -894,8 +894,8 @@ public class EdgeStore implements Serializable {
             pointConsumer.consumePoint(p, vertex.getFixedLat(), vertex.getFixedLon());
         }
 
-        /** @return an envelope around the whole edge geometry. */
-        public Envelope getEnvelope() {
+        /** @return an envelope around the whole edge geometry, in fixed-point WGS84 degrees. */
+        public Envelope getEnvelope () {
             Envelope envelope = new Envelope();
             forEachPoint((p, fixedLat, fixedLon) -> {
                 envelope.expandToInclude(fixedLon, fixedLat);
@@ -992,6 +992,19 @@ public class EdgeStore implements Serializable {
             setFlag(EdgeFlag.ALLOWS_BIKE);
             setFlag(EdgeFlag.ALLOWS_CAR);
             setFlag(EdgeFlag.ALLOWS_WHEELCHAIR);
+        }
+
+        public boolean allowsStreetMode(StreetMode mode) {
+            if (mode == StreetMode.WALK) {
+                return getFlag(EdgeStore.EdgeFlag.ALLOWS_PEDESTRIAN);
+            }
+            if (mode == StreetMode.BICYCLE) {
+                return getFlag(EdgeStore.EdgeFlag.ALLOWS_BIKE);
+            }
+            if (mode == StreetMode.CAR) {
+                return getFlag(EdgeStore.EdgeFlag.ALLOWS_CAR);
+            }
+            throw new RuntimeException("Supplied mode not recognized.");
         }
 
         public long getOSMID() {
@@ -1124,7 +1137,7 @@ public class EdgeStore implements Serializable {
     public static class DefaultTravelTimeCalculator implements TravelTimeCalculator {
 
         @Override
-        public float getTravelTimeMilliseconds(Edge edge, int durationSeconds, StreetMode streetMode, ProfileRequest req) {
+        public float getTravelTimeSeconds(Edge edge, int durationSeconds, StreetMode streetMode, ProfileRequest req) {
             float speedms = edge.calculateSpeed(req, streetMode);
             return (float) (edge.getLengthM() / speedms);
         }

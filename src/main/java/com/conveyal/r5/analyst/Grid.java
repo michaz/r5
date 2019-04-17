@@ -76,6 +76,7 @@ import static org.apache.commons.math3.util.FastMath.tan;
  * the edges of the world.
  */
 public class Grid {
+
     public static final Logger LOG = LoggerFactory.getLogger(Grid.class);
 
     /** The web mercator zoom level for this grid. */
@@ -100,6 +101,12 @@ public class Grid {
 
     /** The data values for each pixel within this grid. */
     public final double[][] grid;
+
+    /** Maximum area allowed for the bounding box of an uploaded shapefile -- large enough for New York State.  */
+    private static final double MAX_BOUNDING_BOX_AREA_SQ_KM = 250_000;
+
+    /** Maximum area allowed for features in a shapefile upload */
+    double MAX_FEATURE_AREA_SQ_DEG = 2;
 
     /**
      * @param zoom web mercator zoom level for the grid.
@@ -182,7 +189,11 @@ public class Grid {
 
         double area = geometry.getArea();
         if (area < 1e-12) {
-            throw new IllegalArgumentException("Geometry is too small");
+            throw new IllegalArgumentException("Feature geometry is too small");
+        }
+
+        if (area > MAX_FEATURE_AREA_SQ_DEG) {
+            throw new IllegalArgumentException("Feature geometry is too large");
         }
 
         PreparedGeometry preparedGeom = pgFact.create(geometry);
@@ -290,7 +301,7 @@ public class Grid {
      * 20037508.342789, 20037508.342789
      * 179.999999999998 85.0511287798064 0
      */
-    private Coordinate mercatorPixelToMeters (double xPixel, double yPixel) {
+    public Coordinate mercatorPixelToMeters (double xPixel, double yPixel) {
         double worldWidthPixels = Math.pow(2, zoom) * 256D;
         // Top left is min x and y because y increases toward the south in web Mercator. Bottom right is max x and y.
         // The origin is WGS84 (0,0).
@@ -426,6 +437,10 @@ public class Grid {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public boolean hasEqualExtents(Grid comparisonGrid){
+        return this.zoom == comparisonGrid.zoom && this.west == comparisonGrid.west && this.north == comparisonGrid.north && this.width == comparisonGrid.width && this.height == comparisonGrid.height;
     }
 
     /* functions below from http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Mathematics */
@@ -590,6 +605,13 @@ public class Grid {
     public static Map<String, Grid> fromShapefile (File shapefile, int zoom, BiConsumer<Integer, Integer> statusListener) throws IOException, FactoryException, TransformException {
         Map<String, Grid> grids = new HashMap<>();
         ShapefileReader reader = new ShapefileReader(shapefile);
+
+        double boundingBoxAreaSqKm = reader.getAreaSqKm();
+
+        if (boundingBoxAreaSqKm > MAX_BOUNDING_BOX_AREA_SQ_KM){
+            throw new IllegalArgumentException("Shapefile extent (" + boundingBoxAreaSqKm + " sq. km.) exceeds limit (" +
+                    MAX_BOUNDING_BOX_AREA_SQ_KM + "sq. km.).");
+        }
 
         Envelope envelope = reader.wgs84Bounds();
         int total = reader.getFeatureCount();

@@ -1,24 +1,26 @@
 package com.conveyal.r5.transit;
 
 import com.amazonaws.AmazonServiceException;
-import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.conveyal.gtfs.BaseGTFSCache;
 import com.conveyal.gtfs.GTFSCache;
-import com.conveyal.gtfs.GTFSFeed;
-import com.conveyal.osmlib.OSMCache;
+import com.conveyal.r5.analyst.cluster.AnalysisTask;
 import com.conveyal.r5.analyst.cluster.BundleManifest;
+import com.conveyal.r5.analyst.cluster.ScenarioCache;
 import com.conveyal.r5.analyst.scenario.Scenario;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.common.R5Version;
+import com.conveyal.r5.kryo.KryoNetworkSerializer;
 import com.conveyal.r5.point_to_point.builder.TNBuilderConfig;
 import com.conveyal.r5.profile.ProfileRequest;
+import com.conveyal.r5.profile.StreetMode;
+import com.conveyal.r5.streets.OSMCache;
 import com.conveyal.r5.streets.StreetLayer;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
-import com.google.common.cache.RemovalListener;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.io.ByteStreams;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
@@ -30,6 +32,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Set;
@@ -46,60 +49,42 @@ public class TransportNetworkCache {
 
     private static final Logger LOG = LoggerFactory.getLogger(TransportNetworkCache.class);
 
-    private AmazonS3Client s3 = new AmazonS3Client();
+    private final AmazonS3 s3;
 
     private final File cacheDir;
 
-    private final String sourceBucket;
-    private final String bucketFolder;
+    private final String bucket;
 
     private static final int DEFAULT_CACHE_SIZE = 1;
 
-    private final LoadingCache<String, TransportNetwork> cache;
+    private final LoadingCache<String, TransportNetwork> cache; // TODO change all other caches from Guava to Caffeine caches
     private final BaseGTFSCache gtfsCache;
     private final OSMCache osmCache;
 
-    @Deprecated
-    public TransportNetworkCache(String sourceBucket) {
-        this(sourceBucket, new File("cache", "graphs")); // reuse cached graphs from old analyst worker
-    }
+    /**
+     * A table of already seen scenarios, avoiding downloading them repeatedly from S3 and allowing us to replace
+     * scenarios with only their IDs, and reverse that replacement later.
+     */
+    private final ScenarioCache scenarioCache = new ScenarioCache();
 
     /** Create a transport network cache. If source bucket is null, will work offline. */
-    public TransportNetworkCache(String sourceBucket, File cacheDir) {
-        this(sourceBucket, cacheDir, DEFAULT_CACHE_SIZE, null);
-    }
-
-    public TransportNetworkCache(String sourceBucket, File cacheDir, String bucketFolder) {
-        this(sourceBucket, cacheDir, DEFAULT_CACHE_SIZE, bucketFolder);
-    }
-
-    /** Create a transport network cache. If source bucket is null, will work offline. */
-    public TransportNetworkCache(String sourceBucket, File cacheDir, int cacheSize, String bucketFolder) {
+    public TransportNetworkCache(String region, String bucket, File cacheDir) {
         this.cacheDir = cacheDir;
-        this.sourceBucket = sourceBucket;
-        this.bucketFolder = bucketFolder != null ? bucketFolder.replaceAll("\\/","") : null;
-        this.cache = createCache(cacheSize);
-        this.gtfsCache = new GTFSCache(sourceBucket, cacheDir);
-        this.osmCache = new OSMCache(sourceBucket, cacheDir);
+        this.bucket = bucket;
+        this.cache = createCache(DEFAULT_CACHE_SIZE);
+        this.gtfsCache = new GTFSCache(region, bucket, null, cacheDir);
+        this.osmCache = new OSMCache(bucket, cacheDir);
+        this.s3 = (bucket == null) ? null : AmazonS3ClientBuilder.defaultClient();
     }
 
     public TransportNetworkCache(BaseGTFSCache gtfsCache, OSMCache osmCache) {
-        this(gtfsCache, osmCache, DEFAULT_CACHE_SIZE);
-    }
-
-    public TransportNetworkCache(BaseGTFSCache gtfsCache, OSMCache osmCache, int cacheSize) {
-        this(gtfsCache, osmCache, cacheSize, null);
-    }
-
-    public TransportNetworkCache(BaseGTFSCache gtfsCache, OSMCache osmCache, int cacheSize, String bucketFolder) {
         this.gtfsCache = gtfsCache;
         this.osmCache = osmCache;
-        this.cache = createCache(cacheSize);
+        this.cache = createCache(DEFAULT_CACHE_SIZE);
         this.cacheDir = gtfsCache.cacheDir;
-        this.sourceBucket = gtfsCache.bucket;
-        // we don't necessarily want to put r5 networks in the gtfsCache bucketFolder
-        // (e.g., "s3://bucket/gtfs"), but we'll go ahead and use the same bucket
-        this.bucketFolder = bucketFolder;
+        this.bucket = gtfsCache.bucket;
+        // This constructor is only called when working offline, so don't create an S3 client to avoid region settings.
+        s3 = null;
     }
 
     /** Convenience method that returns transport network from cache. */
@@ -114,6 +99,17 @@ public class TransportNetworkCache {
     }
 
     /**
+     * Stopgap measure to associate full scenarios with their IDs, when scenarios are sent inside single point requests.
+     */
+    public void rememberScenario (Scenario scenario) {
+        if (scenario == null) {
+            throw new AssertionError("Expecting a scenario to be embedded in this task.");
+        } else {
+            scenarioCache.storeScenario(scenario);
+        }
+    }
+
+    /**
      * Find or create a TransportNetwork for the scenario specified in a ProfileRequest.
      * ProfileRequests may contain an embedded complete scenario, or it may contain only the ID of a scenario that
      * must be fetched from S3.
@@ -123,62 +119,28 @@ public class TransportNetworkCache {
      *
      * The fact that scenario networks are cached means that PointSet linkages will be automatically reused when
      * TODO it seems to me that this method should just take a Scenario as its second parameter, and that resolving the scenario against caches on S3 or local disk should be pulled out into a separate function
+     * the problem is that then you resolve the scenario every time, even when the ID is enough to look up the already built network.
+     * So we need to pass the whole task in here, so either the ID or full scenario are visible.
      */
-    public synchronized TransportNetwork getNetworkForScenario (String networkId, ProfileRequest request) {
-        String scenarioId = request.scenarioId != null ? request.scenarioId : request.scenario.id;
-
+    public synchronized TransportNetwork getNetworkForScenario (String networkId, String scenarioId) {
         // The following call clears the scenarioNetworkCache if the current base graph changes.
+        // FIXME does it? What does that mean? Are we trying to say that the cache of scenario networks is cleared?
         TransportNetwork baseNetwork = this.getNetwork(networkId);
         if (baseNetwork.scenarios == null) {
             baseNetwork.scenarios = new HashMap<>();
         }
+
         TransportNetwork scenarioNetwork =  baseNetwork.scenarios.get(scenarioId);
-
-        // DEBUG force scenario re-application
-        // scenarioNetwork = null;
-
         if (scenarioNetwork == null) {
+            // The network for this scenario was not found in the cache. Create that scenario network and cache it.
             LOG.info("Applying scenario to base network...");
-
-            Scenario scenario;
-            if (request.scenario == null && request.scenarioId != null) {
-                // resolve scenario
-                LOG.info("Retrieving scenario stored separately on S3 rather than in the ProfileRequest");
-
-                File scenarioFile = new File(cacheDir, getScenarioFilename(networkId, scenarioId));
-
-                if (!scenarioFile.exists()) {
-                    try {
-                        S3Object obj = s3.getObject(sourceBucket, getScenarioKey(networkId, scenarioId));
-                        InputStream is = obj.getObjectContent();
-                        OutputStream os = new BufferedOutputStream(new FileOutputStream(scenarioFile));
-                        ByteStreams.copy(is, os);
-                        is.close();
-                        os.close();
-                    } catch (Exception e) {
-                        LOG.info("Error retrieving scenario from S3", e);
-                        return null;
-                    }
-                }
-
-                try {
-                    scenario = JsonUtilities.objectMapper.readValue(scenarioFile, Scenario.class);
-                } catch (IOException e) {
-                    LOG.error("Could not read scenario {} from disk", scenarioId, e);
-                    return null;
-                }
-            } else if (request.scenario != null) {
-                scenario = request.scenario;
-            } else {
-                LOG.warn("No scenario specified");
-                scenario = new Scenario();
-            }
-
+            // Fetch the full scenario if an ID was specified.
+            Scenario scenario = resolveScenario(networkId, scenarioId);
             // Apply any scenario modifications to the network before use, performing protective copies where necessary.
-            // Prepend a pre-filter that removes trips that are not running during the search time window.
-            // FIXME Caching transportNetworks with scenarios already applied means we can’t use the InactiveTripsFilter.
-            // Solution may be to cache linked point sets based on scenario ID but always apply scenarios every time.
-            // scenario.modifications.add(0, new InactiveTripsFilter(baseNetwork, clusterRequest.profileRequest));
+            // We used to prepend a filter to the scenario, removing trips that are not running during the search time window.
+            // However, because we are caching transportNetworks with scenarios already applied to them, we can’t use
+            // the InactiveTripsFilter. The solution may be to cache linked point sets based on scenario ID but always
+            // apply scenarios every time.
             scenarioNetwork = scenario.applyToTransportNetwork(baseNetwork);
             LOG.info("Done applying scenario. Caching the resulting network.");
             baseNetwork.scenarios.put(scenario.id, scenarioNetwork);
@@ -192,11 +154,6 @@ public class TransportNetworkCache {
         return String.format("%s_%s.json", networkId, scenarioId);
     }
 
-    private String getScenarioKey(String networkId, String scenarioId) {
-        String filename = getScenarioFilename(networkId, scenarioId);
-        return bucketFolder != null ? String.join("/", bucketFolder, filename) : filename;
-    }
-
     /** If this transport network is already built and cached, fetch it quick */
     private TransportNetwork checkCached (String networkId) {
         try {
@@ -206,11 +163,11 @@ public class TransportNetworkCache {
             else {
                 LOG.info("No locally cached transport network at {}.", cacheLocation);
 
-                if (sourceBucket != null) {
+                if (bucket != null) {
                     LOG.info("Checking for cached transport network on S3.");
                     S3Object tn;
                     try {
-                        tn = s3.getObject(sourceBucket, getR5NetworkKey(networkId));
+                        tn = s3.getObject(bucket, getR5NetworkFilename(networkId));
                     } catch (AmazonServiceException ex) {
                         LOG.info("No cached transport network was found in S3. It will be built from scratch.");
                         return null;
@@ -232,17 +189,11 @@ public class TransportNetworkCache {
                 }
             }
             LOG.info("Loading cached transport network at {}", cacheLocation);
-            return TransportNetwork.read(cacheLocation);
+            return KryoNetworkSerializer.read(cacheLocation);
         } catch (Exception e) {
             LOG.error("Exception occurred retrieving cached transport network", e);
             return null;
         }
-    }
-
-
-    private String getR5NetworkKey(String networkId) {
-        String filename = getR5NetworkFilename(networkId);
-        return bucketFolder != null ? String.join("/", bucketFolder, filename) : filename;
     }
 
     private String getR5NetworkFilename(String networkId) {
@@ -256,7 +207,7 @@ public class TransportNetworkCache {
 
         // check if we have a new-format bundle with a JSON manifest
         String manifestFile = GTFSCache.cleanId(networkId) + ".json";
-        if (new File(cacheDir, manifestFile).exists() || sourceBucket != null && s3.doesObjectExist(sourceBucket, manifestFile)) {
+        if (new File(cacheDir, manifestFile).exists() || bucket != null && s3.doesObjectExist(bucket, manifestFile)) {
             LOG.info("Detected new-format bundle with manifest.");
             network = buildNetworkFromManifest(networkId);
         } else {
@@ -265,24 +216,24 @@ public class TransportNetworkCache {
         }
         network.scenarioId = networkId;
 
-        // Networks created in TransportNetworkCache are going to be used for analysis work.
-        // Pre-compute distance tables from stops to streets and pre-build a linked grid pointset for the whole region.
-        // They should be serialized along with the network, which avoids building them when an analysis worker starts.
-        // The pointset linkage will never be used directly, but serves as a basis for scenario linkages, making
+        // Networks created in TransportNetworkCache are going to be used for analysis work. Pre-compute distance tables
+        // from stops to street vertices, then pre-build a linked grid pointset for the whole region. These linkages
+        // should be serialized along with the network, which avoids building them when an analysis worker starts.
+        // The linkage we create here will never be used directly, but serves as a basis for scenario linkages, making
         // analysis much faster to start up.
         network.transitLayer.buildDistanceTables(null);
-        network.rebuildLinkedGridPointSet();
+        network.rebuildLinkedGridPointSet(StreetMode.WALK);
 
-        // Cache the network.
+        // Cache the serialized network on the local filesystem.
         File cacheLocation = new File(cacheDir, getR5NetworkFilename(networkId));
 
         try {
             // Serialize TransportNetwork to local cache on this worker
-            network.write(cacheLocation);
+            KryoNetworkSerializer.write(network, cacheLocation);
             // Upload the serialized TransportNetwork to S3
-            if (sourceBucket != null) {
+            if (bucket != null) {
                 LOG.info("Uploading the serialized TransportNetwork to S3 for use by other workers.");
-                s3.putObject(sourceBucket, getR5NetworkKey(networkId), cacheLocation);
+                s3.putObject(bucket, getR5NetworkFilename(networkId), cacheLocation);
                 LOG.info("Done uploading the serialized TransportNetwork to S3.");
             } else {
                 LOG.info("Network saved to cache directory, not uploading to S3 while working offline.");
@@ -302,11 +253,11 @@ public class TransportNetworkCache {
 
         // If we don't have a local copy of the inputs, fetch graph data as a ZIP from S3 and unzip it.
         if( ! dataDirectory.exists() || dataDirectory.list().length == 0) {
-            if (sourceBucket != null) {
+            if (bucket != null) {
                 LOG.info("Downloading graph input files from S3.");
                 dataDirectory.mkdirs();
-                String networkZipKey = bucketFolder != null ? String.join("/", bucketFolder, networkId + ".zip") : networkId + ".zip";
-                S3Object graphDataZipObject = s3.getObject(sourceBucket, networkZipKey);
+                String networkZipKey = networkId + ".zip";
+                S3Object graphDataZipObject = s3.getObject(bucket, networkZipKey);
                 ZipInputStream zis = new ZipInputStream(graphDataZipObject.getObjectContent());
                 try {
                     ZipEntry entry;
@@ -360,10 +311,10 @@ public class TransportNetworkCache {
         File manifestFile = new File(cacheDir, manifestFileName);
 
         // TODO handle manifest not in S3
-        if (!manifestFile.exists() && sourceBucket != null) {
+        if (!manifestFile.exists() && bucket != null) {
             LOG.info("Manifest file not found locally, downloading from S3");
-            String manifestKey = getManifestKey(networkId);
-            s3.getObject(new GetObjectRequest(sourceBucket, manifestKey), manifestFile);
+            String manifestKey = getManifestFilename(networkId);
+            s3.getObject(new GetObjectRequest(bucket, manifestKey), manifestFile);
         }
 
         BundleManifest manifest;
@@ -404,39 +355,26 @@ public class TransportNetworkCache {
         return network;
     }
 
-    private String getManifestKey(String networkId) {
-        String filename = getManifestFilename(networkId);
-        return bucketFolder != null ? String.join("/", bucketFolder, filename) : filename;
-    }
-
     private String getManifestFilename(String networkId) {
         return GTFSCache.cleanId(networkId) + ".json";
     }
 
     private LoadingCache createCache(int size) {
-        RemovalListener<String, TransportNetwork> removalListener = removalNotification -> {
-            String id = removalNotification.getKey();
-
-            // delete local files ONLY if using s3
-            if (sourceBucket != null) {
-                String[] extensions = {".db", ".db.p", ".zip"};
-                // delete local cache files (including zip) when feed removed from cache
-                for (String type : extensions) {
-                    File file = new File(cacheDir, id + type);
-                    file.delete();
-                }
-            }
-        };
-        return CacheBuilder.newBuilder()
+        return Caffeine.newBuilder()
                 .maximumSize(size)
-                .removalListener(removalListener)
-                .build(new CacheLoader() {
-                    public TransportNetwork load(Object s) throws Exception {
-                        // Thanks, java, for making me use a cast here. If I put generic arguments to new CacheLoader
-                        // due to type erasure it can't be sure I'm using types correctly.
-                        return loadNetwork((String) s);
+                .removalListener((networkId, network, cause) -> {
+                    LOG.info("Network {} was evicted from the cache.", networkId);
+                    // delete local files ONLY if using s3
+                    if (bucket != null) {
+                        String[] extensions = {".db", ".db.p", ".zip"};
+                        // delete local cache files (including zip) when feed removed from cache
+                        for (String type : extensions) {
+                            File file = new File(cacheDir, networkId + type);
+                            file.delete();
+                        }
                     }
-                });
+                })
+                .build(this::loadNetwork);
     }
 
     /**
@@ -455,10 +393,22 @@ public class TransportNetworkCache {
             network = buildNetwork(networkId);
         }
 
-        cache.put(networkId, network);
+        // TODO determine why we were manually inserting into the cache.
+        // It now results in concurrent modification deadlock because it's called inside a cacheloader.
+        // cache.put(networkId, network);
         return network;
     }
 
+    /**
+     * This will eventually be used in WorkerStatus to report to the backend all loaded networks, to give it hints about
+     * what kind of tasks the worker is ready to work on immediately. This is made more complicated by the fact that
+     * workers are started up with no networks loaded, but with the intent for them to work on a particular job. So
+     * currently the workers just report which network they were started up for, and this method is not used.
+     *
+     * In the future, workers should just report an empty set of loaded networks, and the back end should strategically
+     * send them tasks when they come on line to assign them to networks as needed. But this will require a new
+     * mechanism to fairly allocate the workers to jobs.
+     */
     public Set<String> getLoadedNetworkIds() {
         return cache.asMap().keySet();
     }
@@ -470,4 +420,44 @@ public class TransportNetworkCache {
                 .flatMap(Collection::stream)
                 .collect(Collectors.toSet());
     }
+
+    /**
+     * Given a network and scenario ID, retrieve that scenario from the local disk cache (falling back on S3).
+     */
+    private Scenario resolveScenario (String networkId, String scenarioId) {
+        // First try to get the scenario from the local memory cache. This should be sufficient for single point tasks.
+        Scenario scenario = scenarioCache.getScenario(scenarioId);
+        if (scenario != null) {
+            return scenario;
+        }
+        // If a scenario ID is supplied, it overrides any supplied full scenario.
+        // There is no intermediate cache here for the scenario objects - we read them from disk files.
+        // This is not a problem, they're only read once before cacheing the resulting scenario-network.
+        File scenarioFile = new File(cacheDir, getScenarioFilename(networkId, scenarioId));
+        if (!scenarioFile.exists()) {
+            LOG.info("Retrieving scenario stored separately on S3 rather than in the ProfileRequest.");
+            try {
+                S3Object obj = s3.getObject(bucket, getScenarioFilename(networkId, scenarioId));
+                InputStream is = obj.getObjectContent();
+                OutputStream os = new BufferedOutputStream(new FileOutputStream(scenarioFile));
+                ByteStreams.copy(is, os);
+                is.close();
+                os.close();
+            } catch (Exception e) {
+                LOG.error("Error retrieving scenario {} from S3: {}", scenarioId, e.toString());
+            }
+        }
+        try {
+            LOG.info("Loading scenario from disk file.");
+            scenario = JsonUtilities.objectMapper.readValue(scenarioFile, Scenario.class);
+        } catch (IOException e) {
+            LOG.error("Could not read scenario {} from disk: {}", scenarioId, e.toString());
+        }
+        if (scenario == null) {
+            LOG.warn("No scenario provided or loaded. Replacing with empty scenario.");
+            scenario = new Scenario();
+        }
+        return scenario;
+    }
+
 }

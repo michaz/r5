@@ -8,6 +8,7 @@ import com.conveyal.r5.api.util.Stop;
 import com.conveyal.r5.common.GeoJsonFeature;
 import com.conveyal.r5.common.GeometryUtils;
 import com.conveyal.r5.common.JsonUtilities;
+import com.conveyal.r5.kryo.KryoNetworkSerializer;
 import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.point_to_point.builder.RouterInfo;
 import com.conveyal.r5.profile.StreetMode;
@@ -74,7 +75,7 @@ public class PointToPointRouterServer {
             //In memory doesn't save it to disk others do (build, preFlight)
             if (!inMemory) {
                 try {
-                    transportNetwork.write(new File(dir, "network.dat"));
+                    KryoNetworkSerializer.write(transportNetwork, new File(dir, "network.dat"));
                 } catch (Exception e) {
                     LOG.error("An error occurred during saving transit networks. Exiting.", e);
                     System.exit(-1);
@@ -88,7 +89,7 @@ public class PointToPointRouterServer {
             }
             try {
                 LOG.info("Loading transit networks from: {}", dir);
-                TransportNetwork transportNetwork = TransportNetwork.read(new File(dir, "network.dat"));
+                TransportNetwork transportNetwork = KryoNetworkSerializer.read(new File(dir, "network.dat"));
                 transportNetwork.readOSM(new File(dir, "osm.mapdb"));
                 run(transportNetwork);
             } catch (Exception e) {
@@ -103,11 +104,11 @@ public class PointToPointRouterServer {
             }
             try {
                 LOG.info("Loading transit networks from: {}", dir);
-                TransportNetwork transportNetwork = TransportNetwork.read(new File(dir, "network.dat"));
+                TransportNetwork transportNetwork = KryoNetworkSerializer.read(new File(dir, "network.dat"));
                 transportNetwork.readOSM(new File(dir, "osm.mapdb"));
                 transportNetwork.transitLayer.buildDistanceTables(null);
-                transportNetwork.rebuildLinkedGridPointSet();
-                transportNetwork.linkedGridPointSet.pointSet.link(transportNetwork.streetLayer, StreetMode.CAR);
+                // Build WALK and CAR linked pointsets because they are needed for isochrones (which are enabled).
+                transportNetwork.rebuildLinkedGridPointSet(StreetMode.WALK, StreetMode.CAR);
                 run(transportNetwork);
             } catch (Exception e) {
                 LOG.error("An error occurred during the reading or decoding of transit networks", e);
@@ -135,6 +136,8 @@ public class PointToPointRouterServer {
         PointToPointQuery pointToPointQuery = new PointToPointQuery(transportNetwork);
 
         //TODO: executor strategies
+        // TODO Clarify why this is generating the GraphQL schema as a function of a point to point query, this is bizarre.
+        // And why is that parameter called "profileResponse" in the GraphQLSchema constructor?
         GraphQL graphQL = new GraphQL(new com.conveyal.r5.GraphQLSchema(pointToPointQuery).indexSchema);
         // add cors header
         before((req, res) -> res.header("Access-Control-Allow-Origin", "*"));

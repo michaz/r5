@@ -56,11 +56,6 @@ public class AddTrips extends Modification {
     private int routeIndex;
 
     @Override
-    public String getType() {
-        return "add-trips";
-    }
-
-    @Override
     public boolean resolve (TransportNetwork network) {
         if (stops == null || stops.size() < 2) {
             errors.add("You must provide at least two stops.");
@@ -126,7 +121,7 @@ public class AddTrips extends Modification {
         LOG.info("Created {}.", pattern);
         for (PatternTimetable timetable : frequencies) {
             createSchedules(timetable, directionId, transitLayer.services).forEach(pattern::addTrip);
-            if (timetable.firstDepartures != null) transitLayer.hasFrequencies = true;
+            if (timetable.firstDepartures == null) transitLayer.hasFrequencies = true;
             else transitLayer.hasSchedules = true;
         }
 

@@ -3,13 +3,13 @@ package com.conveyal.r5.streets;
 import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.common.SphericalDistanceLibrary;
 import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
-import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.profile.ProfileRequest;
+import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.transit.TransitLayer;
+import com.conveyal.r5.transit.TransportNetwork;
 import com.conveyal.r5.util.TIntObjectHashMultimap;
 import com.conveyal.r5.util.TIntObjectMultimap;
 import gnu.trove.iterator.TIntIterator;
-import com.conveyal.r5.transit.TransportNetwork;
 import gnu.trove.list.TIntList;
 import gnu.trove.map.TIntIntMap;
 import gnu.trove.map.TIntObjectMap;
@@ -21,8 +21,19 @@ import org.apache.commons.math3.util.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.PriorityQueue;
 
 /**
  * This routes over the street layer of a TransitNetwork.
@@ -295,6 +306,9 @@ public class StreetRouter {
      * If the given point is not close to an existing vertex, we will create two states, one at each vertex at the
      * ends of the edge that is found.
      *
+     * Note that the mode of travel should be set before calling this, otherwise you may link to a road you can't
+     * travel on!
+     *
      * @param lat Latitude in floating point (not fixed int) degrees.
      * @param lon Longitude in flating point (not fixed int) degrees.
      * @return true if an edge was found near the specified coordinate
@@ -316,11 +330,14 @@ public class StreetRouter {
         // Uses weight based on distance from end vertices, and speed on edge which depends on transport mode
         float speedMetersPerSecond = edge.calculateSpeed(profileRequest, streetMode);
         startState1.weight = (int) ((split.distance1_mm / 1000) / speedMetersPerSecond);
+        startState1.durationSeconds = startState1.weight;
+        startState1.distance = split.distance1_mm;
         edge.advance();
         // Speed can be different on opposite sides of the same street
         speedMetersPerSecond = edge.calculateSpeed(profileRequest, streetMode);
         startState0.weight = (int) ((split.distance0_mm / 1000) / speedMetersPerSecond);
-        // FIXME we're setting weight but not time and distance on these states above!
+        startState0.durationSeconds = startState0.weight;
+        startState0.distance = split.distance0_mm;
 
         // FIXME Below is reversing the vertices, but then aren't the weights, times, distances wrong? Why are we even doing this?
         if (profileRequest.reverseSearch) {
@@ -941,21 +958,14 @@ public class StreetRouter {
                 //defectiveTraversal = true;
                 return;
             }
-/*
-            durationSeconds += seconds;
-            time += seconds;
-*/
             //TODO: decrease time
             if (false) {
-
                 durationSeconds-=seconds;
                 durationFromOriginSeconds -= seconds;
             } else {
-
                 durationSeconds+=seconds;
                 durationFromOriginSeconds += seconds;
             }
-
 
         }
 

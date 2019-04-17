@@ -1,15 +1,12 @@
 package com.conveyal.r5.analyst;
 
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.S3Object;
 import com.google.common.io.LittleEndianDataInputStream;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -25,11 +22,12 @@ import java.util.zip.GZIPInputStream;
  * When storing bootstrap replications of travel time, we also store the point estimate (using all Monte Carlo draws
  * equally weighted) as the first value, so a SelectingGridReducer(0) can be used to retrieve the point estimate.
  *
- * This class is not referenced within R5, but is used by the Analysis front end.
+ * DEPRECATED because this has been copied into analysis-backend where it belongs.
  */
+@Deprecated
 public class SelectingGridReducer {
 
-    private static final AmazonS3 s3 = new AmazonS3Client();
+    private static final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
 
     /** Version of the access grid format we read */
     private static final int ACCESS_GRID_VERSION = 0;
@@ -86,24 +84,12 @@ public class SelectingGridReducer {
                 for (int iteration = 0, val = 0; iteration < nSamples; iteration++) {
                     valuesThisOrigin[iteration] = (val += input.readInt());
                 }
-
                 // compute percentiles
-                outputGrid.grid[x][y] = computeValueForOrigin(x, y, valuesThisOrigin, zoom, west, north, width, height);
+                outputGrid.grid[x][y] = valuesThisOrigin[index];
             }
         }
-
         input.close();
-
         return outputGrid;
     }
 
-    /**
-     * Compute a single value summarizing all the samples of accessibility at a given origin point.
-     * In this case, just extract a single value out of the list of values.
-     * This function could easily be inlined, but we're leaving it separate as an indicator of how to make grid
-     * reduce operations abstract (so you could have more than one different one).
-     */
-    protected double computeValueForOrigin(int x, int y, int[] valuesThisOrigin, int zoom, int west, int north, int width, int height) {
-        return valuesThisOrigin[index];
-    }
 }

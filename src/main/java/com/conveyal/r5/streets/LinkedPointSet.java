@@ -52,6 +52,8 @@ public class LinkedPointSet implements Serializable {
      */
     public final StreetMode streetMode;
 
+    public static final int OFF_STREET_SPEED_MILLIMETERS_PER_SECOND = (int) (1.3f * 1000);
+
     /**
      * For each point, the closest edge in the street layer. This is in fact the even (forward) edge ID of the closest
      * edge pairs.
